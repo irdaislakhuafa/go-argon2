@@ -2,8 +2,11 @@ package hash
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -58,9 +61,63 @@ func HashArgon2(password []byte) (string, error) {
 	return encodedHash, nil
 }
 
+func CompareArgon2(password, encodedHash string) (bool, error) {
+	// extract all parameters include salt and key length from encoded password hash
+	p, hash, err := decodeHash(encodedHash)
+	if err != nil {
+		return false, err
+	}
+
+	// generate other password with same parameters and compare it with existsing hash
+	if otherhash := argon2.IDKey([]byte(password), p.salt, p.iterations, p.memory, p.parallelism, p.keyLen); subtle.ConstantTimeCompare(hash, otherhash) != 1 {
+		return false, nil
+	}
+
+	return true, nil
+}
+
 func encodeHash(p *params, hash []byte) (string, error) {
 	base64Salt := base64.RawStdEncoding.EncodeToString(p.salt)
 	base64Hash := base64.RawStdEncoding.EncodeToString(hash)
 	encodedHash := fmt.Sprintf(standardHashFormat, argon2.Version, p.memory, p.iterations, p.parallelism, base64Salt, base64Hash)
 	return encodedHash, nil
+}
+
+func decodeHash(encodedHash string) (p *params, hash []byte, err error) {
+	// split encoded argon2 hash with default delimiter
+	values := strings.Split(encodedHash, defaultDelimiter)
+
+	// compare length values with standart length
+	if valueLength := len(values); valueLength != standardLengthValues {
+		return nil, nil, errors.New(fmt.Sprintf("invalid length of encoded hash, expected %v but get %v", standardLengthValues, valueLength))
+	}
+
+	// check incompatible argon2 version
+	version := 0
+	if _, err := fmt.Sscanf(values[2], "v=%d", &version); err != nil {
+		return nil, nil, errors.New(fmt.Sprintf("error get argon2 version on decoded hash, %v", err))
+	}
+
+	if version != argon2.Version {
+		return nil, nil, errors.New(fmt.Sprintf("incompatible argon2 version, current argon2 version is %d but encoded hash using version %d", argon2.Version, version))
+	}
+
+	// mapping values for memory, iterations and parallelism
+	p = &params{}
+	if _, err := fmt.Sscanf(values[3], "m=%d,t=%d,p=%d", &p.memory, &p.iterations, &p.parallelism); err != nil {
+		return nil, nil, errors.New(fmt.Sprintf("error while get values from memory, iterations, and parallelism, %v", err))
+	}
+
+	// decode base64 salt
+	if p.salt, err = base64.RawStdEncoding.Strict().DecodeString(values[4]); err != nil {
+		return nil, nil, errors.New(fmt.Sprintf("error while decode salt from values, %s", err))
+	}
+
+	// decode base64 hash
+	if hash, err = base64.RawStdEncoding.Strict().DecodeString(values[5]); err != nil {
+		return nil, nil, errors.New(fmt.Sprintf("error while decode hash from values, %s", err))
+	}
+	p.keyLen = uint32(len(hash))
+
+	return p, hash, nil
 }

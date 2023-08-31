@@ -17,4 +17,10 @@ func main() {
 	}
 
 	fmt.Println("argon2 hash:", encodedHash)
+
+	isEquals, err := hash.CompareArgon2(password, encodedHash)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("is equals:", isEquals)
 }
