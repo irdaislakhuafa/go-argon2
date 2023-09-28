@@ -49,13 +49,13 @@ func HashArgon2(password []byte) (string, error) {
 
 	// generate salt with random number
 	if _, err := rand.Read(p.salt); err != nil {
-		return "", err
+		return "", errors.Join(err)
 	}
 
 	hash := argon2.IDKey(password, p.salt, p.iterations, p.memory, p.parallelism, p.keyLen)
 	encodedHash, err := encodeHash(&p, hash)
 	if err != nil {
-		return "", err
+		return "", errors.Join(err)
 	}
 
 	return encodedHash, nil
@@ -70,7 +70,7 @@ func CompareArgon2(password, encodedHash string) (bool, error) {
 
 	// generate other password with same parameters and compare it with existsing hash
 	if otherhash := argon2.IDKey([]byte(password), p.salt, p.iterations, p.memory, p.parallelism, p.keyLen); subtle.ConstantTimeCompare(hash, otherhash) != 1 {
-		return false, nil
+		return false, ErrHashNotMatch
 	}
 
 	return true, nil
@@ -89,33 +89,33 @@ func decodeHash(encodedHash string) (p *params, hash []byte, err error) {
 
 	// compare length values with standart length
 	if valueLength := len(values); valueLength != standardLengthValues {
-		return nil, nil, errors.New(fmt.Sprintf("invalid length of encoded hash, expected %v but get %v", standardLengthValues, valueLength))
+		return nil, nil, errors.Join(ErrInvalidHashLength, errors.New(fmt.Sprintf("invalid length of encoded hash, expected %v but get %v", standardLengthValues, valueLength)))
 	}
 
 	// check incompatible argon2 version
 	version := 0
 	if _, err := fmt.Sscanf(values[2], "v=%d", &version); err != nil {
-		return nil, nil, errors.New(fmt.Sprintf("error get argon2 version on decoded hash, %v", err))
+		return nil, nil, errors.Join(ErrArgon2Version, err)
 	}
 
 	if version != argon2.Version {
-		return nil, nil, errors.New(fmt.Sprintf("incompatible argon2 version, current argon2 version is %d but encoded hash using version %d", argon2.Version, version))
+		return nil, nil, errors.Join(ErrIncompatibleArgon2Version, errors.New(fmt.Sprintf("current argon2 version is %d but encoded hash using version %d", argon2.Version, version)))
 	}
 
 	// mapping values for memory, iterations and parallelism
 	p = &params{}
 	if _, err := fmt.Sscanf(values[3], "m=%d,t=%d,p=%d", &p.memory, &p.iterations, &p.parallelism); err != nil {
-		return nil, nil, errors.New(fmt.Sprintf("error while get values from memory, iterations, and parallelism, %v", err))
+		return nil, nil, errors.Join(ErrArgon2Format, err)
 	}
 
 	// decode base64 salt
 	if p.salt, err = base64.RawStdEncoding.Strict().DecodeString(values[4]); err != nil {
-		return nil, nil, errors.New(fmt.Sprintf("error while decode salt from values, %s", err))
+		return nil, nil, errors.Join(ErrDecodeSalt, err)
 	}
 
 	// decode base64 hash
 	if hash, err = base64.RawStdEncoding.Strict().DecodeString(values[5]); err != nil {
-		return nil, nil, errors.New(fmt.Sprintf("error while decode hash from values, %s", err))
+		return nil, nil, errors.Join(ErrDecodeHash, err)
 	}
 	p.keyLen = uint32(len(hash))
 
