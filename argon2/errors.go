@@ -9,7 +9,7 @@ func (e *Error) Error() string {
 }
 
 func NewErr(s string) error {
-	return &Error{}
+	return &Error{Message: s}
 }
 
 var (
