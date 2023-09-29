@@ -8,8 +8,8 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
-func NewErr(s string) error {
-	return &Error{Message: s}
+func NewErr(msg string) error {
+	return &Error{Message: msg}
 }
 
 var (
